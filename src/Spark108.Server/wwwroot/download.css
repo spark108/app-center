@@ -1,0 +1,37 @@
+body {
+    margin: 0;
+    color: #18212b;
+    background: #fff;
+    font: 1rem/1.55 system-ui, sans-serif;
+}
+
+main {
+    max-width: 40rem;
+    margin: clamp(2rem, 12vh, 7rem) auto;
+    padding: 0 1.25rem;
+}
+
+h1 {
+    font-size: clamp(1.8rem, 5vw, 2.4rem);
+    line-height: 1.2;
+    margin: 0;
+}
+
+a { color: #144b9b; }
+
+.download {
+    display: inline-block;
+    padding: .55rem .95rem;
+    border-radius: .3rem;
+    color: #fff;
+    background: #144b9b;
+    text-decoration: none;
+}
+
+.download:hover { background: #103b7a; }
+
+pre {
+    overflow-x: auto;
+    padding: .6rem .8rem;
+    background: #f1f3f5;
+}

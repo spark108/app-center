@@ -320,13 +320,14 @@ internal sealed class Store(IConfiguration config)
             r => r.GetInt64(0), ("@app", appId), ("@v", version))).Length > 0;
     }
 
-    public async Task<string?> LatestPublishedVersion(string appId)
+    public async Task<ReleaseRow?> LatestPublishedRelease(string appId, bool publicOnly = false)
     {
         await using var c = await Open();
-        return (await Read(c, null, """
-            SELECT version FROM releases WHERE app_id=@app AND published
-            ORDER BY major DESC,minor DESC,patch DESC LIMIT 1
-            """, r => r.GetString(0), ("@app", appId))).SingleOrDefault();
+        return (await Read(c, null, $"""
+            SELECT {ReleaseFields} FROM releases r JOIN apps a ON a.id=r.app_id
+            WHERE r.app_id=@app AND r.published AND (NOT @publicOnly OR NOT a.restricted)
+            ORDER BY r.major DESC,r.minor DESC,r.patch DESC LIMIT 1
+            """, Release, ("@app", appId), ("@publicOnly", publicOnly))).SingleOrDefault();
     }
 
     public async Task AddRelease(ReleaseInfo info, string key, bool published, long? actor)

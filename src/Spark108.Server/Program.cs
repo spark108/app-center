@@ -46,8 +46,8 @@ var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
 if (builder.Configuration.GetValue<bool>("show-client-version"))
 {
-    if (await store.LatestPublishedVersion(PackageRules.AppCenterId) is { } version)
-        Console.WriteLine(version);
+    if (await store.LatestPublishedRelease(PackageRules.AppCenterId) is { } release)
+        Console.WriteLine(release.Info.Version);
     else
     {
         Console.Error.WriteLine("App Center has no published version.");
@@ -81,7 +81,7 @@ app.Use(async (context, next) =>
     await next(context);
 });
 app.UseStaticFiles(new StaticFileOptions { ServeUnknownFileTypes = false });
-app.MapGet("/", () => AdminView.Message(404, "404", "Страница не найдена."));
+ClientDownloads.Map(app);
 app.MapGet("/healthz", () => Results.Text("ok"));
 app.MapGet("/api/auth/desktop", (HttpContext c, AuthFlow auth) => auth.Start(c, true));
 app.MapGet("/api/auth/callback", (HttpContext c, AuthFlow auth) => auth.Callback(c));
