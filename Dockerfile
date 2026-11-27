@@ -33,5 +33,6 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS app
 WORKDIR /app
 RUN mkdir -p /data/temp && chown -R "$APP_UID:$APP_UID" /data
 COPY --from=build /publish/ ./
+RUN chmod -R u=rwX,go=rX /app
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Spark108.Server.dll"]
