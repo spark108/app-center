@@ -8,9 +8,11 @@
 
 1. Клонируйте `https://github.com/spark108/app-center.git` на сервер, например в `/opt/spark108/app-center`.
 2. В настройках приложения в Alathea Auth зарегистрируйте точный Redirect URI `https://app.godish.ru/api/auth/callback`. На сервере создайте `.env` из [.env.example](.env.example) и заполните `ALATHEA_CLIENT_SECRET`, `MARIADB_PASSWORD` и `MARIADB_ROOT_PASSWORD`. Для паролей используйте разные случайные значения.
-3. В клоне выполните `docker compose up -d --build`, затем `bash scripts/rebuild-client.sh`. Для проверки состояния используйте `docker compose ps` и `docker compose logs app`.
+3. В клоне выполните `docker compose up -d --build`, затем `APP_CENTER_VERSION=1.0.0 bash scripts/rebuild-client.sh`. Для проверки состояния используйте `docker compose ps` и `docker compose logs app`.
 4. Настройте DNS и HTTPS для `app.godish.ru`. Передавайте все пути на `127.0.0.1:8080`, сохраняя исходный путь. Установите допустимый размер запроса прокси минимум в 513 МиБ.
 5. Откройте [панель управления](https://app.godish.ru/acp) и выполните первый вход. Первая успешно зарегистрированная учётная запись становится администратором. При развёртывании можно задать `ALATHEA_BOOTSTRAP_SUBJECT` с идентификатором `sub` владельца, чтобы закрепить за ним первый вход.
+
+Шаблон `.env` включает Bake и цветной индикатор сборки в терминале. Для существующей установки перенесите в `.env` значения `COMPOSE_BAKE`, `COMPOSE_PROGRESS` и `COMPOSE_ANSI` из шаблона.
 
 Пример конфигурации Caddy на хосте.
 
@@ -32,9 +34,25 @@ app.godish.ru {
 
 ## Обновление с GitHub
 
-На сервере выполните `git pull --ff-only`. При изменении API, панели, схемы или Compose пересоберите веб-контейнер командой `docker compose up -d --build app`. При изменении клиента, обновлятора или клиентской части общего проекта увеличьте `Version` в `Directory.Build.props` в коммите, затем выполните `bash scripts/rebuild-client.sh` на сервере.
+При изменении API, панели или схемы выполните на сервере.
 
-Скрипт собирает Windows x64 через Docker BuildKit и сразу публикует ZIP в системной карточке App Center. Повторная сборка с тем же номером сохраняет уже зарегистрированный пакет и состояние публикации. Установленные клиенты получают обновление через HTTP API.
+```bash
+cd /opt/spark108/app-center && git pull --ff-only && docker compose up -d --build app
+```
+
+При изменении клиента или обновлятора передайте новый номер версии в `APP_CENTER_VERSION`. Скрипт собирает Windows x64 на сервере и сразу публикует пакет в системной карточке App Center. Установленные клиенты получают обновление через HTTP API.
+
+```bash
+cd /opt/spark108/app-center && git pull --ff-only && APP_CENTER_VERSION=1.0.1 bash scripts/rebuild-client.sh
+```
+
+Чтобы узнать последнюю опубликованную версию, выполните следующую команду. Она выводит номер версии из каталога.
+
+```bash
+cd /opt/spark108/app-center && docker compose exec -T app dotnet Spark108.Server.dll --show-client-version true
+```
+
+Повторная сборка с тем же номером сохраняет зарегистрированный пакет и его состояние публикации.
 
 ## Первая установка клиента
 

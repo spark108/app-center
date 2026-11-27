@@ -44,6 +44,17 @@ builder.Services.AddHttpClient("Alathea", c => c.Timeout = TimeSpan.FromSeconds(
 
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
+if (builder.Configuration.GetValue<bool>("show-client-version"))
+{
+    if (await store.LatestPublishedVersion(PackageRules.AppCenterId) is { } version)
+        Console.WriteLine(version);
+    else
+    {
+        Console.Error.WriteLine("App Center has no published version.");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
 await store.Initialize();
 if (builder.Configuration["publish-client"] is { Length: > 0 } builtPackage)
 {
