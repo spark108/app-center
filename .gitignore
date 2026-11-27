@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+.env
+artifacts/
+.vs/
+TestResults/
+src/Spark108.Server/data/

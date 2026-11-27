@@ -1,0 +1,17 @@
+**
+!Directory.Build.props
+!src
+!src/Spark108.Core
+!src/Spark108.Core/**
+!src/Spark108.Server
+!src/Spark108.Server/**
+!src/Spark108.Desktop
+!src/Spark108.Desktop/**
+!src/Spark108.Updater
+!src/Spark108.Updater/**
+!scripts
+!scripts/Install-AppCenter.ps1
+!scripts/Zip-Package.proj
+**/bin
+**/obj
+**/data
