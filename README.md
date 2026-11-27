@@ -6,6 +6,8 @@
 
 Разворачивайте Compose на Linux-хосте с Docker и Compose. Оба контейнера используют `network_mode: host`. По умолчанию MariaDB занимает `127.0.0.1:3307`, а веб-сервис — `127.0.0.1:8080`. Порты можно изменить в `.env`. HTTPS завершает обратный прокси на том же хосте.
 
+Если прокси находится в другой сетевой среде, укажите в `.env` доступный ему адрес веб-сервиса через `APP_LISTEN_URLS`. Например, `APP_LISTEN_URLS=http://127.0.0.1:8080;http://192.168.10.112:8080` задаёт два адреса. Укажите `http://192.168.10.112:8080` в конфигурации прокси и примените переменную командой `docker compose up -d --no-deps app`.
+
 1. Клонируйте `https://github.com/spark108/app-center.git` на сервер, например в `/opt/spark108/app-center`.
 2. В настройках приложения в Alathea Auth зарегистрируйте точный Redirect URI `https://app.godish.ru/api/auth/callback`. На сервере создайте `.env` из [.env.example](.env.example) и заполните `ALATHEA_CLIENT_SECRET`, `MARIADB_PASSWORD` и `MARIADB_ROOT_PASSWORD`. Для паролей используйте разные случайные значения.
 3. В клоне выполните `docker compose up -d --build`, затем `APP_CENTER_VERSION=1.0.0 bash scripts/rebuild-client.sh`. Для проверки состояния используйте `docker compose ps` и `docker compose logs app`.

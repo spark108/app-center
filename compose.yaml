@@ -26,7 +26,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      ASPNETCORE_URLS: http://127.0.0.1:${APP_PORT:-8080}
+      ASPNETCORE_URLS: "${APP_LISTEN_URLS:-http://127.0.0.1:${APP_PORT:-8080}}"
       PublicOrigin: ${PUBLIC_ORIGIN:-https://app.godish.ru}
       Auth__ClientId: ${ALATHEA_CLIENT_ID:-6e875752c94bfdbf7a33f747325ffbcc}
       Auth__ClientSecret: ${ALATHEA_CLIENT_SECRET:?Set ALATHEA_CLIENT_SECRET in .env}
