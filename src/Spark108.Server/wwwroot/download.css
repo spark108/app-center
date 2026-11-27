@@ -29,9 +29,3 @@ a { color: #144b9b; }
 }
 
 .download:hover { background: #103b7a; }
-
-pre {
-    overflow-x: auto;
-    padding: .6rem .8rem;
-    background: #f1f3f5;
-}

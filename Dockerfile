@@ -28,10 +28,19 @@ RUN --mount=type=bind,target=/source --mount=type=tmpfs,target=/work,size=322122
 FROM scratch AS desktop-package
 COPY --from=desktop-build /export/ /
 
+FROM golang:1.27-alpine AS setup-build
+WORKDIR /setup
+COPY src/Spark108.Setup/ ./
+ARG APP_CENTER_SETUP_ORIGIN=https://app.godish.ru
+RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
+    -ldflags="-s -w -H=windowsgui -X main.serviceOrigin=$APP_CENTER_SETUP_ORIGIN" \
+    -o /out/Spark108-AppCenter-Setup.exe .
+
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS app
 WORKDIR /app
 RUN mkdir -p /data/temp && chown -R "$APP_UID:$APP_UID" /data
 COPY --from=build /publish/ ./
+COPY --from=setup-build /out/Spark108-AppCenter-Setup.exe ./
 RUN chmod -R u=rwX,go=rX /app
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Spark108.Server.dll"]

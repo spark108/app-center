@@ -5,6 +5,8 @@
 !src/Spark108.Core/**
 !src/Spark108.Server
 !src/Spark108.Server/**
+!src/Spark108.Setup
+!src/Spark108.Setup/**
 !src/Spark108.Desktop
 !src/Spark108.Desktop/**
 !src/Spark108.Updater
