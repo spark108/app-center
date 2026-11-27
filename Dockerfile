@@ -10,21 +10,20 @@ COPY src/Spark108.Server/ src/Spark108.Server/
 RUN dotnet publish src/Spark108.Server/Spark108.Server.csproj -c Release --no-restore -o /publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS desktop-build
-WORKDIR /src
-COPY Directory.Build.props ./
-COPY src/Spark108.Core/ src/Spark108.Core/
-COPY src/Spark108.Desktop/ src/Spark108.Desktop/
-COPY src/Spark108.Updater/ src/Spark108.Updater/
-COPY scripts/Zip-Package.proj scripts/
 ARG APP_CENTER_VERSION
-RUN version="${APP_CENTER_VERSION:-$(dotnet msbuild src/Spark108.Desktop/Spark108.Desktop.csproj -nologo -getProperty:Version)}" \
-    && dotnet publish src/Spark108.Desktop/Spark108.Desktop.csproj -c Release -r win-x64 --self-contained -p:EnableWindowsTargeting=true "-p:Version=$version" -o /client \
-    && dotnet publish src/Spark108.Updater/Spark108.Updater.csproj -c Release -r win-x64 --self-contained -p:EnableWindowsTargeting=true "-p:Version=$version" -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o /updater \
-    && cp /updater/Spark108.Updater.exe /client/ \
-    && printf '%s\n' "$version" > /client/spark-release.txt \
-    && mkdir /export \
-    && cp /client/spark-release.txt /export/ \
-    && dotnet msbuild scripts/Zip-Package.proj -nologo -t:Zip -p:PackageDirectory=/client -p:ArchivePath=/export/app-center.zip
+RUN --mount=type=bind,target=/source --mount=type=tmpfs,target=/work,size=3221225472 \
+    mkdir -p /work/source /work/home /work/tmp /export \
+    && cp -a /source/. /work/source/ \
+    && cd /work/source \
+    && export HOME=/work/home DOTNET_CLI_HOME=/work/home NUGET_PACKAGES=/work/nuget TMPDIR=/work/tmp DOTNET_NOLOGO=1 \
+    && version="${APP_CENTER_VERSION:-$(dotnet msbuild src/Spark108.Desktop/Spark108.Desktop.csproj -nologo -getProperty:Version)}" \
+    && dotnet publish src/Spark108.Desktop/Spark108.Desktop.csproj -c Release -r win-x64 --self-contained -p:EnableWindowsTargeting=true "-p:Version=$version" -o /work/client \
+    && dotnet publish src/Spark108.Updater/Spark108.Updater.csproj -c Release -r win-x64 --self-contained -p:EnableWindowsTargeting=true "-p:Version=$version" -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o /work/updater \
+    && cp /work/updater/Spark108.Updater.exe /work/client/ \
+    && printf '%s\n' "$version" > /work/client/spark-release.txt \
+    && cp /work/client/spark-release.txt /export/ \
+    && dotnet msbuild scripts/Zip-Package.proj -nologo -t:Zip -p:PackageDirectory=/work/client -p:ArchivePath=/export/app-center.zip \
+    && chmod 644 /export/app-center.zip /export/spark-release.txt
 
 FROM scratch AS desktop-package
 COPY --from=desktop-build /export/ /

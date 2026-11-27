@@ -40,7 +40,7 @@ app.godish.ru {
 cd /opt/spark108/app-center && git pull --ff-only && docker compose up -d --build app
 ```
 
-При изменении клиента или обновлятора передайте новый номер версии в `APP_CENTER_VERSION`. Скрипт собирает Windows x64 на сервере и сразу публикует пакет в системной карточке App Center. Установленные клиенты получают обновление через HTTP API.
+При изменении клиента или обновлятора передайте новый номер версии в `APP_CENTER_VERSION`. Скрипт собирает Windows x64 на сервере и сразу публикует пакет в системной карточке App Center. BuildKit хранит промежуточные файлы сборки во временном томе в памяти. Установленные клиенты получают обновление через HTTP API.
 
 ```bash
 cd /opt/spark108/app-center && git pull --ff-only && APP_CENTER_VERSION=1.0.1 bash scripts/rebuild-client.sh
