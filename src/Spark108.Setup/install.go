@@ -40,10 +40,10 @@ func parseOrigin(value string) (*url.URL, error) {
 	origin, err := url.Parse(value)
 	if err != nil || origin.Host == "" || origin.User != nil ||
 		(origin.Path != "" && origin.Path != "/") || origin.RawQuery != "" || origin.Fragment != "" {
-		return nil, errors.New("некорректный адрес App Center")
+		return nil, errors.New("некорректный адрес Центра приложений")
 	}
 	if origin.Scheme != "https" && !(origin.Scheme == "http" && origin.Hostname() == "127.0.0.1") {
-		return nil, errors.New("для загрузки App Center требуется HTTPS")
+		return nil, errors.New("для загрузки Центра приложений требуется HTTPS")
 	}
 	return origin, nil
 }
@@ -63,7 +63,7 @@ func install(root string, origin *url.URL, progress reportProgress) (string, err
 	if err != nil {
 		return "", err
 	}
-	if err := progress("Распаковка App Center", 95); err != nil {
+	if err := progress("Распаковка Центра приложений", 95); err != nil {
 		return "", err
 	}
 	pending := filepath.Join(stage, "client")
@@ -77,7 +77,7 @@ func install(root string, origin *url.URL, progress reportProgress) (string, err
 	for _, name := range []string{clientExe, updaterExe} {
 		info, err := os.Stat(filepath.Join(pending, name))
 		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
-			return "", errors.New("в пакете отсутствуют файлы App Center")
+			return "", errors.New("в пакете отсутствуют файлы Центра приложений")
 		}
 	}
 	if err := progress("Завершение установки", 99); err != nil {
@@ -102,7 +102,7 @@ func install(root string, origin *url.URL, progress reportProgress) (string, err
 }
 
 func download(origin *url.URL, destination string, progress reportProgress) (string, error) {
-	if err := progress("Подключение к App Center", 0); err != nil {
+	if err := progress("Подключение к Центру приложений", 0); err != nil {
 		return "", err
 	}
 	transport := &http.Transport{
@@ -125,7 +125,7 @@ func download(origin *url.URL, destination string, progress reportProgress) (str
 	}
 	response, err := client.Get(origin.ResolveReference(&url.URL{Path: "/download/app-center/package"}).String())
 	if err != nil {
-		return "", fmt.Errorf("не удалось подключиться к App Center: %w", err)
+		return "", fmt.Errorf("не удалось подключиться к Центру приложений: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
@@ -162,7 +162,7 @@ func download(origin *url.URL, destination string, progress reportProgress) (str
 			}
 			percent := total * 90 / size
 			if percent != lastPercent {
-				if err := progress("Скачивание App Center "+version, percent); err != nil {
+				if err := progress("Скачивание Центра приложений "+version, percent); err != nil {
 					return "", err
 				}
 				lastPercent = percent
@@ -193,7 +193,7 @@ func unpack(archivePath, destination string, progress reportProgress) error {
 	seen := make(map[string]bool, len(archive.File))
 	var total uint64
 	for _, entry := range archive.File {
-		if err := progress("Распаковка App Center", 95); err != nil {
+		if err := progress("Распаковка Центра приложений", 95); err != nil {
 			return err
 		}
 		name := strings.TrimSuffix(entry.Name, "/")

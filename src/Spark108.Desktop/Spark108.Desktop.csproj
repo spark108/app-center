@@ -3,9 +3,12 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
-    <AssemblyTitle>Spark108 App Center</AssemblyTitle>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyTitle>Центр приложений</AssemblyTitle>
   </PropertyGroup>
   <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
     <ProjectReference Include="../Spark108.Core/Spark108.Core.csproj" />
     <Resource Include="Assets/infrastructure.jpg" />
   </ItemGroup>

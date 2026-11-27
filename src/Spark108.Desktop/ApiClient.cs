@@ -39,6 +39,7 @@ internal sealed class ApiClient : IDisposable
         {
             BaseAddress = origin, Timeout = TimeSpan.FromSeconds(30)
         };
+        client.DefaultRequestHeaders.Add("X-AppCenter-Install-Protocol", "2");
         try
         {
             if (File.Exists(sessionPath))
@@ -138,7 +139,7 @@ internal sealed class ApiClient : IDisposable
             }
             var status = valid ? "200 OK" : "404 Not Found";
             var body = Encoding.UTF8.GetBytes(valid
-                ? "<!doctype html><html lang=ru><meta charset=utf-8><title>Spark108</title><h1>Вернитесь в Spark108 App Center</h1><p>Эту вкладку можно закрыть.</p></html>"
+                ? "<!doctype html><html lang=ru><meta charset=utf-8><title>Spark108</title><h1>Вернитесь в Центр приложений</h1><p>Эту вкладку можно закрыть.</p></html>"
                 : "Not found");
             await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n"), deadline.Token);
             await stream.WriteAsync(body, deadline.Token);
@@ -181,11 +182,11 @@ internal sealed class ApiClient : IDisposable
     private static async Task<T> Read<T>(HttpResponseMessage response, CancellationToken ct) =>
         await response.Content.ReadFromJsonAsync<T>(Json, ct) ?? throw new InvalidDataException("Сервер вернул пустой ответ.");
 
-    private async Task<HttpResponseMessage> Send(HttpMethod method, string path, CancellationToken ct)
+    private async Task<HttpResponseMessage> Send(HttpMethod method, string path, CancellationToken ct, HttpContent? content = null)
     {
         if (token is null)
             throw new LoginRequiredException();
-        using var request = new HttpRequestMessage(method, path);
+        using var request = new HttpRequestMessage(method, path) { Content = content };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         try
@@ -215,11 +216,33 @@ internal sealed class ApiClient : IDisposable
         throw new HttpRequestException($"Сервер вернул ошибку {(int)response.StatusCode}.", null, response.StatusCode);
     }
 
-    public async Task Download(ReleaseInfo release, string path, IProgress<int> progress, CancellationToken ct)
+    public async Task<FileUpdatePlan?> FilePlan(long id, Dictionary<string, string> files, CancellationToken ct)
     {
-        if (release.Size is <= 0 or > PackageRules.MaxArchive || release.Sha256.Length != 64)
+        try
+        {
+            using var content = JsonContent.Create(new FileUpdateRequest(files), options: Json);
+            using var response = await Send(HttpMethod.Post, $"/api/releases/{id}/files/plan", ct, content);
+            return await Read<FileUpdatePlan>(response, ct);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound) { return null; }
+    }
+
+    public Task Download(ReleaseInfo release, string path, IProgress<int> progress, CancellationToken ct)
+    {
+        if (release.Size is <= 0 or > PackageRules.MaxArchive)
             throw new InvalidDataException("Некорректные данные пакета.");
-        using var response = await Send(HttpMethod.Get, $"/api/releases/{release.Id}/download", ct);
+        return DownloadChecked($"/api/releases/{release.Id}/download", path, release.Size, release.Sha256, progress, ct);
+    }
+
+    public Task DownloadFile(long release, int index, PackageFile file, string path, CancellationToken ct) =>
+        DownloadChecked($"/api/releases/{release}/files/{index}", path, file.Size, file.Sha256, null, ct);
+
+    private async Task DownloadChecked(string route, string path, long size, string? expectedHash, IProgress<int>? progress,
+        CancellationToken ct)
+    {
+        if (size is < 0 or > PackageRules.MaxUnpacked || !PackageRules.ValidHash(expectedHash))
+            throw new InvalidDataException("Некорректные данные скачиваемого файла.");
+        using var response = await Send(HttpMethod.Get, route, ct);
         await using var input = await response.Content.ReadAsStreamAsync(ct);
         await using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 128 * 1024, true);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -233,18 +256,18 @@ internal sealed class ApiClient : IDisposable
             var read = await input.ReadAsync(buffer, idleTimeout.Token);
             if (read == 0) break;
             total += read;
-            if (total > release.Size)
+            if (total > size)
                 throw new InvalidDataException("Загруженный пакет превышает заявленный размер.");
             hash.AppendData(buffer.AsSpan(0, read));
             await output.WriteAsync(buffer.AsMemory(0, read), ct);
-            var percent = (int)(total * 100 / release.Size);
+            var percent = (int)(total * 100 / size);
             if (lastPercent != percent)
             {
-                progress.Report(percent);
+                progress?.Report(percent);
                 lastPercent = percent;
             }
         }
-        if (total != release.Size || !Convert.ToHexString(hash.GetHashAndReset()).Equals(release.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (total != size || !Convert.ToHexString(hash.GetHashAndReset()).Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Контрольная сумма пакета не совпала.");
     }
 

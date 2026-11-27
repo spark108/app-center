@@ -139,8 +139,9 @@ internal static class AdminRoutes
         var version = Field(form, "version", 32, true);
         if (!PackageRules.ValidVersion(version))
             throw new RuleException("Укажите версию в формате 1.2.3.");
+        var setup = Installer(form, app.Kind);
         string? entry = null;
-        if (app.Kind == PackageKind.Application)
+        if (app.Kind == PackageKind.Application && setup is null)
         {
             entry = Field(form, "entry", 240, true).Replace('\\', '/');
             if (!PackageRules.ValidPath(entry) || !entry.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
@@ -149,16 +150,50 @@ internal static class AdminRoutes
 
         var key = Guid.NewGuid().ToString("N");
         await using var input = upload.OpenReadStream();
-        var info = await files.Stage(key, app, version, Field(form, "notes", 8000), entry, input, context.RequestAborted);
+        var info = await files.Stage(key, app, version, Field(form, "notes", 8000), entry, input, context.RequestAborted, setup);
         try
         {
             await db.AddRelease(info, key, form.ContainsKey("published"), actor.Id);
         }
         catch (RuleException)
         {
-            File.Delete(files.Package(key));
+            files.Discard(key);
             throw;
         }
         return Results.Redirect($"/acp/apps/{id}#releases");
+    }
+
+    private static InstallerSettings? Installer(IFormCollection form, PackageKind kind)
+    {
+        var install = Field(form, "installer", 240).Replace('\\', '/');
+        if (install.Length == 0)
+            return null;
+        if (kind == PackageKind.AppCenter || PackageRules.ExternalWindowsPath(install) ||
+            !PackageRules.ValidPackagePath(install) || !PackageRules.InstallerExtension(install))
+            throw new RuleException("Укажите .exe, .msi или .ps1 внутри ZIP.");
+
+        var uninstall = Field(form, "uninstaller", 400).Replace('\\', '/');
+        if (uninstall.Length > 0 && (!ValidTarget(uninstall) || !PackageRules.InstallerExtension(uninstall)))
+            throw new RuleException("Проверьте путь к установщику удаления.");
+        var launch = Field(form, "entry", 400).Replace('\\', '/');
+        if (launch.Length > 0 && (!ValidTarget(launch) || !launch.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
+            throw new RuleException("Укажите путь к .exe для запуска приложения.");
+        var registryKey = Field(form, "registry_key", 160);
+        if (registryKey.Length > 0 && !PackageRules.ValidRegistryKey(registryKey))
+            throw new RuleException("Укажите имя ключа удаления Windows, например GUID продукта MSI.");
+        return new InstallerSettings(new PackageCommand(install, Args(form, "install_args"), form.ContainsKey("install_elevated")),
+            uninstall.Length == 0 ? null : new PackageCommand(uninstall, Args(form, "uninstall_args"), form.ContainsKey("uninstall_elevated")),
+            launch.Length == 0 ? null : launch, registryKey.Length == 0 ? null : registryKey);
+    }
+
+    private static bool ValidTarget(string path) => !path.Any(char.IsControl) &&
+        (PackageRules.ExternalWindowsPath(path) || PackageRules.ValidPackagePath(path));
+
+    private static string[] Args(IFormCollection form, string key)
+    {
+        var args = Field(form, key, 8000).Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        if (args.Length > 64 || args.Any(arg => arg.Any(char.IsControl)))
+            throw new RuleException("Укажите до 64 аргументов, по одному на строку.");
+        return args;
     }
 }

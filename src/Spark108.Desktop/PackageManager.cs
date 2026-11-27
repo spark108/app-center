@@ -27,8 +27,16 @@ internal sealed class PackageManager(ApiClient api)
             var target = AppDirectory(id);
             if (!Directory.Exists(target))
                 Directory.Move(backup, target);
-            else
-                TryDelete(backup);
+            else if (TryRead(target) is { } current && current.Id == id)
+            {
+                if (current.Pending)
+                {
+                    DiscardPending(target);
+                    Directory.Move(backup, target);
+                }
+                else
+                    TryDelete(backup);
+            }
         }
         var installed = new Dictionary<string, InstalledPackage>(StringComparer.Ordinal);
         foreach (var directory in Directory.EnumerateDirectories(LocalPackages.Apps))
@@ -38,15 +46,39 @@ internal sealed class PackageManager(ApiClient api)
                 continue;
             try
             {
-                if (LocalPackages.Read(directory) is { } record && record.Id == id)
+                if (LocalPackages.Read(directory) is not { } record || record.Id != id)
+                    continue;
+                if (record.Pending)
+                {
+                    DiscardPending(directory);
+                    continue;
+                }
+                if (record.UninstallKey is null || PackageRegistration.FindNative(record.UninstallKey) is not null)
+                {
                     installed.Add(id, record);
+                    PackageRegistration.Sync(record);
+                }
             }
             catch (JsonException) { }
         }
-        var client = CanUpdateClient ? LocalPackages.Read(LocalPackages.Client) : null;
-        installed[PackageRules.AppCenterId] = new InstalledPackage(PackageRules.AppCenterId, "Spark108 App Center",
+        var client = CanUpdateClient ? TryRead(LocalPackages.Client) : null;
+        installed[PackageRules.AppCenterId] = new InstalledPackage(PackageRules.AppCenterId, "Центр приложений",
             "Клиент каталога приложений.", PackageKind.AppCenter, ClientVersion, null, client?.Dependencies ?? []);
         return installed;
+    }
+
+    private static InstalledPackage? TryRead(string directory)
+    {
+        try { return LocalPackages.Read(directory); }
+        catch (JsonException) { return null; }
+    }
+
+    private static void DiscardPending(string directory)
+    {
+        Directory.CreateDirectory(LocalPackages.Staging);
+        var temporary = Path.Combine(LocalPackages.Staging, Guid.NewGuid().ToString("N"));
+        Directory.Move(directory, temporary);
+        TryDelete(temporary);
     }
 
     public static void CleanupStaging()
@@ -73,7 +105,7 @@ internal sealed class PackageManager(ApiClient api)
                     !item.App.Dependencies.ToHashSet().SetEquals(existing.Dependencies)))).ToArray();
         var selfUpdate = required.Any(x => x.App.Kind == PackageKind.AppCenter);
         if (selfUpdate && !CanUpdateClient)
-            throw new InvalidOperationException("Установите клиент скриптом Install-AppCenter.ps1, чтобы включить самообновление.");
+            throw new InvalidOperationException("Установите клиент с главной страницы Центра приложений, чтобы включить самообновление.");
         if (required.Length == 0)
             return false;
 
@@ -92,27 +124,37 @@ internal sealed class PackageManager(ApiClient api)
                     !PackageRules.ValidVersion(item.Release.Version) ||
                     (item.App.Kind == PackageKind.AppCenter) != (component == PackageRules.AppCenterId))
                     throw new InvalidDataException("План содержит недопустимый пакет.");
-                var zip = Path.Combine(stage, component + ".zip");
                 var from = index * 100 / required.Length;
                 var to = (index + 1) * 100 / required.Length;
-                report($"Скачивание · {item.App.Name}", from);
-                await api.Download(item.Release, zip,
-                    new Progress<int>(value => report($"Скачивание · {item.App.Name}", from + (to - from) * value / 100)), ct);
+                var source = item.App.Kind == PackageKind.AppCenter ? LocalPackages.Client : AppDirectory(component);
                 var folder = Directory.CreateDirectory(item.App.Kind == PackageKind.AppCenter
                     ? Path.Combine(stage, "next") : Path.Combine(stage, "packages", component)).FullName;
-                report($"Распаковка · {item.App.Name}", from);
-                await Task.Run(() => Extract(zip, folder, item, ct), ct);
-                File.Delete(zip);
+                report($"Подготовка файлов · {item.App.Name}", from);
+                if (!installed.ContainsKey(component) || !Directory.Exists(source) ||
+                    !await PackageUpdates.Prepare(api, item, source, folder,
+                        value => report($"Обновление файлов · {item.App.Name}", from + (to - from) * value / 100), ct))
+                {
+                    var zip = Path.Combine(stage, component + ".zip");
+                    await api.Download(item.Release, zip,
+                        new Progress<int>(value => report($"Скачивание · {item.App.Name}", from + (to - from) * value / 100)), ct);
+                    report($"Распаковка · {item.App.Name}", from);
+                    await Task.Run(() => Extract(zip, folder, item, ct), ct);
+                    File.Delete(zip);
+                }
                 LocalPackages.Write(folder, new InstalledPackage(component, item.App.Name, item.App.Description,
-                    item.App.Kind, item.Release.Version, item.Release.EntryPoint, item.App.Dependencies));
+                    item.App.Kind, item.Release.Version, item.Release.EntryPoint, item.App.Dependencies,
+                    item.Release.Installer, Pending: item.Release.Installer is not null));
                 prepared.Add((item, folder));
             }
             report("Применение изменений", 100);
             ct.ThrowIfCancellationRequested();
             foreach (var (item, folder) in prepared.Where(x => x.Item.App.Kind != PackageKind.AppCenter))
             {
+                ct.ThrowIfCancellationRequested();
                 var destination = AppDirectory(item.App.Id);
                 CheckNotRunning(destination);
+                if (installed.TryGetValue(item.App.Id, out var prior))
+                    CheckNativeNotRunning(prior);
                 var backup = BackupDirectory(item.App.Id);
                 if (Directory.Exists(destination) && LocalPackages.Read(destination)?.Id != item.App.Id)
                     throw new InvalidOperationException("Папка назначения уже занята другой установкой.");
@@ -126,6 +168,14 @@ internal sealed class PackageManager(ApiClient api)
                     throw;
                 }
                 installedNow.Push((destination, backup, folder));
+                if (item.Release.Installer is { } setup)
+                {
+                    report($"Установщик · {item.App.Name}", 100);
+                    var key = await NativeSetup.Install(item.App.Id, destination, setup);
+                    var record = LocalPackages.Read(destination)! with { UninstallKey = key, Pending = false };
+                    LocalPackages.Write(destination, record);
+                    Confirm(installedNow);
+                }
             }
             if (selfUpdate)
             {
@@ -137,8 +187,7 @@ internal sealed class PackageManager(ApiClient api)
                 using var process = Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить обновление клиента.");
                 handedOff = true;
             }
-            foreach (var applied in installedNow)
-                TryDelete(applied.Backup);
+            Confirm(installedNow);
             return handedOff;
         }
         catch
@@ -158,11 +207,22 @@ internal sealed class PackageManager(ApiClient api)
         }
     }
 
+    private static void Confirm(Stack<(string Target, string Backup, string Staged)> installed)
+    {
+        while (installed.TryPop(out var applied))
+        {
+            TryDelete(applied.Backup);
+            if (TryRead(applied.Target) is { Pending: false } record)
+                PackageRegistration.Sync(record);
+        }
+    }
+
     private static void Extract(string file, string destination, InstallItem item, CancellationToken ct)
     {
         using var zip = ZipFile.OpenRead(file);
         PackageRules.CheckArchive(zip, item.Release.EntryPoint,
-            item.App.Kind == PackageKind.AppCenter ? item.Release.Version : null);
+            item.App.Kind == PackageKind.AppCenter ? item.Release.Version : null,
+            item.Release.Installer is { } setup ? [setup.Install.Path] : null);
         var buffer = new byte[128 * 1024];
         foreach (var entry in zip.Entries)
         {
@@ -188,7 +248,7 @@ internal sealed class PackageManager(ApiClient api)
         }
     }
 
-    public static void Remove(InstalledPackage package)
+    public static async Task Remove(InstalledPackage package)
     {
         if (package.Kind == PackageKind.AppCenter || package.Id == PackageRules.AppCenterId)
             throw new InvalidOperationException("Клиент удаляется средствами первоначальной установки.");
@@ -197,15 +257,20 @@ internal sealed class PackageManager(ApiClient api)
             throw new InvalidOperationException($"Компонент нужен приложению «{dependent.Name}».");
         var folder = AppDirectory(package.Id);
         CheckNotRunning(folder);
+        CheckNativeNotRunning(package);
         Directory.CreateDirectory(LocalPackages.Staging);
+        await NativeSetup.Uninstall(package, folder);
+        if (package.Installer is not null && Directory.Exists(NativeSetup.InstallDirectory(package.Id)))
+            DiscardPending(NativeSetup.InstallDirectory(package.Id));
         var trash = Path.Combine(LocalPackages.Staging, Guid.NewGuid().ToString("N"));
         Directory.Move(folder, trash);
+        PackageRegistration.Remove(package.Id);
         TryDelete(trash);
     }
 
     public static void Launch(InstalledPackage package)
     {
-        if (!EntryPointPresent(package) || package.Kind != PackageKind.Application)
+        if (!CanLaunch(package))
             throw new InvalidOperationException("Файл запуска отсутствует. Переустановите приложение.");
         var exe = EntryPoint(package)!;
         var known = Installed();
@@ -226,11 +291,28 @@ internal sealed class PackageManager(ApiClient api)
     }
 
     public static bool EntryPointPresent(InstalledPackage package) =>
-        package.Kind != PackageKind.Application || EntryPoint(package) is { } exe && File.Exists(exe);
+        package.Kind != PackageKind.Application || package.Installer is { Launch: null } || CanLaunch(package);
 
-    private static string? EntryPoint(InstalledPackage package) =>
-        package.EntryPoint is { } entry && PackageRules.ValidPath(entry) && entry.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? Path.Combine(AppDirectory(package.Id), entry.Replace('/', Path.DirectorySeparatorChar)) : null;
+    public static bool CanLaunch(InstalledPackage package) => package.Kind == PackageKind.Application &&
+        EntryPoint(package) is { } exe && File.Exists(exe);
+
+    private static string? EntryPoint(InstalledPackage package)
+    {
+        if ((package.Installer?.Launch ?? package.EntryPoint) is not { } entry ||
+            !entry.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return null;
+        try { return NativeSetup.Resolve(entry, package.Id, AppDirectory(package.Id)); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException) { return null; }
+    }
+
+    private static void CheckNativeNotRunning(InstalledPackage package)
+    {
+        if (package.Installer is null)
+            return;
+        CheckNotRunning(NativeSetup.InstallDirectory(package.Id));
+        if (EntryPoint(package) is { } path && File.Exists(path))
+            CheckNotRunning(path, file: true);
+    }
 
     private static string AppDirectory(string id)
     {
@@ -241,9 +323,9 @@ internal sealed class PackageManager(ApiClient api)
 
     private static string BackupDirectory(string id) => Path.Combine(LocalPackages.Apps, $".{id}.previous");
 
-    private static void CheckNotRunning(string folder)
+    private static void CheckNotRunning(string folder, bool file = false)
     {
-        if (!Directory.Exists(folder))
+        if (!file && !Directory.Exists(folder))
             return;
         var prefix = folder + Path.DirectorySeparatorChar;
         foreach (var process in Process.GetProcesses())
@@ -253,7 +335,7 @@ internal sealed class PackageManager(ApiClient api)
                 string? exe = null;
                 try { exe = process.MainModule?.FileName; }
                 catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException) { }
-                if (exe?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true)
+                if (file ? folder.Equals(exe, StringComparison.OrdinalIgnoreCase) : exe?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true)
                     throw new InvalidOperationException("Закройте приложение перед обновлением или удалением.");
             }
         }

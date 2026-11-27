@@ -11,15 +11,15 @@ internal static class BuiltInPublisher
         var id = PackageRules.AppCenterId;
         if (await store.HasRelease(id, version))
         {
-            Console.WriteLine($"App Center {version} already exists. The catalog entry was preserved.");
+            Console.WriteLine($"Версия Центра приложений {version} уже есть в каталоге.");
             return;
         }
         await using var package = File.OpenRead(path);
         if (package.Length is <= 0 or > PackageRules.MaxArchive)
-            throw new InvalidDataException("Invalid App Center package size.");
+            throw new InvalidDataException("Некорректный размер пакета Центра приложений.");
 
         var key = Guid.NewGuid().ToString("N");
-        var row = new AppRow(id, "Spark108 App Center", "", PackageKind.AppCenter, false);
+        var row = new AppRow(id, "Центр приложений", "", PackageKind.AppCenter, false);
         var info = await storage.Stage(key, row, version, "", null, package, CancellationToken.None);
         try
         {
@@ -27,10 +27,10 @@ internal static class BuiltInPublisher
         }
         catch (RuleException)
         {
-            File.Delete(storage.Package(key));
+            storage.Discard(key);
             if (!await store.HasRelease(id, version))
                 throw;
         }
-        Console.WriteLine($"App Center {version} is published in the catalog.");
+        Console.WriteLine($"Версия Центра приложений {version} опубликована в каталоге.");
     }
 }

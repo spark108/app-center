@@ -13,7 +13,7 @@ import (
 	"unsafe"
 )
 
-const setupTitle = "Установка Spark108 App Center"
+const setupTitle = "Установка Центра приложений"
 
 var serviceOrigin = "https://app.godish.ru"
 
@@ -21,7 +21,7 @@ func main() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := run(); err != nil && !errors.Is(err, errCanceled) {
-		messageBox("Не удалось установить App Center.\n\n"+err.Error(), 0x10)
+		messageBox("Не удалось установить Центр приложений.\n\n"+err.Error(), 0x10)
 		os.Exit(1)
 	}
 }
@@ -55,10 +55,10 @@ func run() error {
 	}
 	for _, folder := range []string{"client", "client.previous"} {
 		if _, err := os.Stat(filepath.Join(root, folder)); !os.IsNotExist(err) {
-			return errors.New("обнаружена незавершённая установка App Center")
+			return errors.New("обнаружена незавершённая установка Центра приложений")
 		}
 	}
-	if messageBox("Скачать и установить Spark108 App Center?", 0x21) != 1 {
+	if messageBox("Скачать и установить Центр приложений?", 0x21) != 1 {
 		return errCanceled
 	}
 
@@ -86,7 +86,7 @@ func launch(executable string) error {
 	command := exec.Command(executable)
 	command.Dir = filepath.Dir(executable)
 	if err := command.Start(); err != nil {
-		return fmt.Errorf("App Center установлен, но запустить его не удалось: %w", err)
+		return fmt.Errorf("не удалось запустить установленный Центр приложений: %w", err)
 	}
 	return command.Process.Release()
 }
@@ -235,5 +235,5 @@ func addStartMenuShortcut(executable string) {
 	}
 	defer file.call(2)
 	syscall.SyscallN(file.vtable[6], uintptr(unsafe.Pointer(file)),
-		uintptr(unsafe.Pointer(winString(filepath.Join(folder, "Spark108 App Center.lnk")))), 1) // Save
+		uintptr(unsafe.Pointer(winString(filepath.Join(folder, "Центр приложений.lnk")))), 1) // Save
 }

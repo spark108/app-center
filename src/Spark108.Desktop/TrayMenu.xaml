@@ -1,0 +1,46 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ContextMenu x:Key="TrayMenu" x:Shared="False" Placement="MousePoint" StaysOpen="False" HasDropShadow="False"
+               FontFamily="Segoe UI" FontSize="16" Foreground="White">
+    <ContextMenu.Template>
+      <ControlTemplate TargetType="ContextMenu">
+        <Border Background="#252626" BorderBrush="#474949" BorderThickness="1" CornerRadius="14"
+                Padding="14,10" MinWidth="275" MaxWidth="400" SnapsToDevicePixels="True">
+          <ItemsPresenter />
+        </Border>
+      </ControlTemplate>
+    </ContextMenu.Template>
+    <ContextMenu.Resources>
+      <Style TargetType="MenuItem">
+        <Setter Property="Foreground" Value="#F4F5F6" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="MenuItem">
+              <Border x:Name="Row" CornerRadius="6" Background="Transparent" Padding="12,9">
+                <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"
+                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                  <Setter TargetName="Row" Property="Background" Value="#3A3C3D" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Foreground" Value="#9B9D9E" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+      <Style TargetType="Separator">
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="Separator">
+              <Border Height="1" Margin="5,7" Background="#464848" />
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+    </ContextMenu.Resources>
+  </ContextMenu>
+</ResourceDictionary>

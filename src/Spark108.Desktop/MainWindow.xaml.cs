@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource lifetime = new();
     private readonly ApiClient api;
     private readonly PackageManager packages;
+    private readonly NotificationArea tray;
     private UserProfile? user;
     private CatalogApp[] catalog = [];
     private Dictionary<string, InstalledPackage> installed = [];
@@ -29,12 +30,16 @@ public partial class MainWindow : Window
     private Section section;
     private int versionRequest;
     private bool allowClose;
+    private bool exitAfterWork;
+    internal bool IsBusy => operation is not null;
+    internal bool SignedIn => user is not null;
 
     public MainWindow()
     {
         InitializeComponent();
         api = new ApiClient();
         packages = new PackageManager(api);
+        tray = new NotificationArea(this);
         ClientBuild.Text = $"Версия клиента {PackageManager.ClientVersion}";
     }
 
@@ -48,7 +53,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                SetStatus("Не удалось обновить App Center. " + File.ReadAllText(LocalPackages.UpdateFailure), true);
+                SetStatus("Не удалось обновить Центр приложений. " + File.ReadAllText(LocalPackages.UpdateFailure), true);
                 File.Delete(LocalPackages.UpdateFailure);
             }
             catch (IOException) { }
@@ -260,13 +265,13 @@ public partial class MainWindow : Window
         ReleaseNotes.Visibility = Show(ReleaseNotes.Text.Length > 0);
         var update = local is not null && release is not null && Version.Parse(release.Version) > Version.Parse(local.Version);
         ApplyButton.Visibility = Show(release is not null && (self ? update : local is null || local.Version != release.Version || repair || item?.Kind == PackageKind.Component));
-        ApplyButton.Content = local is null ? "Установить" : update ? (self ? "Обновить App Center" : "Обновить") :
+        ApplyButton.Content = local is null ? "Установить" : update ? (self ? "Обновить Центр приложений" : "Обновить") :
             local.Version == release?.Version ? (broken ? "Восстановить" : "Проверить компоненты") : $"Установить {release?.Version}";
-        LaunchButton.Visibility = Show(local?.Kind == PackageKind.Application && item is not null && !broken);
+        LaunchButton.Visibility = Show(local is not null && item is not null && PackageManager.CanLaunch(local));
         RemoveButton.Visibility = Show(local is not null && !self);
         DownloadButton.Visibility = Show(release is not null);
         ApplyButton.IsEnabled = !busy && (!self || PackageManager.CanUpdateClient);
-        ApplyButton.ToolTip = self && !PackageManager.CanUpdateClient ? "Для самообновления установите клиент из пакета App Center." : null;
+        ApplyButton.ToolTip = self && !PackageManager.CanUpdateClient ? "Для самообновления установите клиент с сайта Центра приложений." : null;
         Versions.IsEnabled = LaunchButton.IsEnabled = RemoveButton.IsEnabled = DownloadButton.IsEnabled = !busy;
     }
 
@@ -278,7 +283,7 @@ public partial class MainWindow : Window
         {
             if (await packages.Install(card.Id, release, Report, ct))
             {
-                SetStatus("Перезапуск App Center…");
+                SetStatus("Перезапуск Центра приложений…");
                 allowClose = true;
                 Application.Current.Shutdown();
                 return;
@@ -316,23 +321,76 @@ public partial class MainWindow : Window
     {
         if (Cards.SelectedItem is not Card { Installed: { } local, App: not null })
             return;
-        await Work($"Проверяем доступ · {local.Name}", async ct =>
+        await LaunchAuthorized(local);
+    }
+
+    private Task LaunchAuthorized(InstalledPackage local) =>
+        Work($"Проверяем доступ · {local.Name}", async ct =>
         {
             await api.Releases(local.Id, ct);
             PackageManager.Launch(local);
+            if (user is { Subject: var subject })
+                NotificationArea.Record(subject, local.Id);
             SetStatus($"Открыто · {local.Name}");
         });
+
+    internal (string Id, string Name)[] TrayApplications()
+    {
+        if (user is not { Subject: var subject })
+            return [];
+        var allowed = catalog.Select(x => x.Id).ToHashSet();
+        return NotificationArea.Recent(subject).Where(allowed.Contains)
+            .Where(id => installed.TryGetValue(id, out var package) && PackageManager.CanLaunch(package))
+            .Select(id => (id, installed[id].Name)).ToArray();
+    }
+
+    internal void ClearRecentApplications()
+    {
+        if (user is { Subject: var subject })
+            NotificationArea.Clear(subject);
+    }
+
+    internal async void LaunchFromTray(string id)
+    {
+        if (user is null || !catalog.Any(app => app.Id == id) || !installed.TryGetValue(id, out var local))
+        {
+            ShowFromTray();
+            return;
+        }
+        await LaunchAuthorized(local);
+    }
+
+    internal async void UninstallFromWindows(string id)
+    {
+        ShowFromTray();
+        if (IsBusy)
+        {
+            SetStatus("Дождитесь завершения текущей операции перед удалением.", true);
+            return;
+        }
+        try
+        {
+            if (PackageManager.Installed().TryGetValue(id, out var package) && package.Kind != PackageKind.AppCenter)
+                await RemoveLocal(package);
+            else
+                SetStatus("Установка программы не найдена.", true);
+        }
+        catch (Exception ex) { SetStatus(ex.Message, true); }
     }
 
     private async void RemoveClick(object sender, RoutedEventArgs e)
     {
-        if (Cards.SelectedItem is not Card { Installed: { } local } ||
-            MessageBox.Show(this, $"Удалить «{local.Name}» с этого компьютера?", "Удаление",
+        if (Cards.SelectedItem is Card { Installed: { } local })
+            await RemoveLocal(local);
+    }
+
+    private async Task RemoveLocal(InstalledPackage local)
+    {
+        if (MessageBox.Show(this, $"Удалить «{local.Name}» с этого компьютера?", "Удаление",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
         await Work($"Удаление · {local.Name}", async ct =>
         {
-            await api.Me(ct);
             await Task.Run(() => PackageManager.Remove(local), ct);
             installed = PackageManager.Installed();
             RenderCards(local.Id);
@@ -362,6 +420,8 @@ public partial class MainWindow : Window
         {
             operation = null;
             SetBusy(false);
+            if (exitAfterWork && !allowClose)
+                ExitFromTray();
         }
     }
 
@@ -387,6 +447,8 @@ public partial class MainWindow : Window
     {
         StatusText.Text = message;
         StatusText.Foreground = error ? new SolidColorBrush(Color.FromRgb(255, 163, 153)) : (Brush)FindResource("Muted");
+        if (error && !IsVisible)
+            ShowFromTray();
     }
 
     private void SwitchTo(Section next)
@@ -420,16 +482,41 @@ public partial class MainWindow : Window
 
     private void WindowClosing(object? sender, CancelEventArgs e)
     {
-        if (operation is not null && !allowClose)
+        if (!allowClose)
         {
             e.Cancel = true;
-            operation.Cancel();
+            Hide();
+            ShowInTaskbar = false;
             return;
         }
         lifetime.Cancel();
+        tray.Dispose();
         api.Dispose();
         lifetime.Dispose();
     }
+
+    internal void ShowFromTray()
+    {
+        ShowInTaskbar = true;
+        Show();
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    internal void ExitFromTray()
+    {
+        if (operation is not null)
+        {
+            exitAfterWork = true;
+            operation.Cancel();
+            return;
+        }
+        allowClose = true;
+        Close();
+    }
+
+    internal void PrepareSystemExit() => allowClose = true;
 
     private void ScrollCards(object sender, MouseWheelEventArgs e)
     {

@@ -72,5 +72,13 @@ CREATE TABLE IF NOT EXISTS releases (
     FOREIGN KEY (app_id) REFERENCES apps(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS release_installers (
+    release_id BIGINT PRIMARY KEY,
+    config_json TEXT NOT NULL,
+    FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 INSERT IGNORE INTO apps (id,name,description,kind,restricted)
-VALUES ('spark108-app-center','Spark108 App Center','Центр приложений для инфраструктуры Spark108. Обновляет клиент и управляет корпоративными программами и их компонентами.',2,FALSE);
+VALUES ('spark108-app-center','Центр приложений','Центр приложений для инфраструктуры Spark108. Обновляет клиент и управляет корпоративными программами и их компонентами.',2,FALSE);
+UPDATE apps SET name='Центр приложений'
+WHERE id='spark108-app-center' AND name='Spark108 App Center';

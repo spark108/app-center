@@ -63,7 +63,7 @@ internal sealed class AuthFlow(IConfiguration config, IDataProtectionProvider pr
         }
         if (attempt is null || attempt.Expires <= DateTimeOffset.UtcNow ||
             context.Request.Query["state"].ToString() != attempt.State)
-            return AdminView.Message(400, "Сеанс входа истёк", "Вернитесь в App Center или в панель и начните вход заново.");
+            return AdminView.Message(400, "Сеанс входа истёк", "Вернитесь в Центр приложений или в панель и начните вход заново.");
 
         try
         {

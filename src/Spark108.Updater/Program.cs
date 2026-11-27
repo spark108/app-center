@@ -30,7 +30,7 @@ try
     parentExited = true;
     if (LocalPackages.Read(next) is not { Id: PackageRules.AppCenterId, Kind: PackageKind.AppCenter } ||
         !File.Exists(Path.Combine(next, PackageRules.AppCenterExe)))
-        throw new InvalidDataException("Не найдена подготовленная версия App Center.");
+        throw new InvalidDataException("Не найдена подготовленная версия Центра приложений.");
 
     if (Directory.Exists(LocalPackages.ClientBackup))
     {
@@ -49,7 +49,7 @@ try
     while (!ready.WaitOne(200))
     {
         if (child.HasExited || expires.Elapsed >= TimeSpan.FromSeconds(25))
-            throw new InvalidOperationException("Новая версия App Center не запустилась.");
+            throw new InvalidOperationException("Новая версия Центра приложений не запустилась.");
     }
 }
 catch (Exception ex)
@@ -98,7 +98,7 @@ static Process Launch(string? operation)
         start.ArgumentList.Add("--update-ready");
         start.ArgumentList.Add(operation);
     }
-    return Process.Start(start) ?? throw new InvalidOperationException("Не удалось открыть App Center.");
+    return Process.Start(start) ?? throw new InvalidOperationException("Не удалось открыть Центр приложений.");
 }
 
 static bool Acquire(Mutex mutex)

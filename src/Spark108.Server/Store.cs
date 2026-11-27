@@ -1,6 +1,7 @@
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using MySqlConnector;
 using Spark108.Core;
@@ -103,11 +104,16 @@ internal sealed class Store(IConfiguration config)
         row.GetString(2), (PackageKind)row.GetInt32(3), row.GetBoolean(4));
     private static ReleaseRow Release(MySqlDataReader row) => new(new ReleaseInfo(row.GetInt64(0),
         row.GetString(1), row.GetString(2), row.GetString(3), row.IsDBNull(4) ? null : row.GetString(4),
-        row.GetInt64(5), row.GetString(6)), row.GetString(7), row.GetBoolean(8));
+        row.GetInt64(5), row.GetString(6), row.IsDBNull(9) ? null : JsonSerializer.Deserialize<InstallerSettings>(row.GetString(9))),
+        row.GetString(7), row.GetBoolean(8));
 
     private const string UserFields = "u.id,u.subject,u.display_name,u.email,u.is_admin,u.enabled";
     private const string AppFields = "a.id,a.name,a.description,a.kind,a.restricted";
-    private const string ReleaseFields = "r.id,r.app_id,r.version,r.notes,r.entry_point,r.size_bytes,r.sha256,r.storage_key,r.published";
+    private const string ReleaseFields = """
+        r.id,r.app_id,r.version,r.notes,r.entry_point,r.size_bytes,r.sha256,r.storage_key,r.published,
+        (SELECT i.config_json FROM release_installers i WHERE i.release_id=r.id)
+        """;
+    private const string SupportedInstaller = "(@installers OR NOT EXISTS (SELECT 1 FROM release_installers i WHERE i.release_id=r.id))";
     private const string Visible = "(@admin OR NOT a.restricted OR EXISTS (SELECT 1 FROM app_access x WHERE x.app_id=a.id AND x.user_id=@user))";
 
     public async Task<UserProfile> Register(string subject, string name, string email)
@@ -201,17 +207,17 @@ internal sealed class Store(IConfiguration config)
             ("@hash", Hash(token)), ("@purpose", purpose));
     }
 
-    public async Task<CatalogSnapshot> Catalog(UserProfile user, bool administration = false)
+    public async Task<CatalogSnapshot> Catalog(UserProfile user, bool administration = false, bool installers = true)
     {
         await using var c = await Open();
         await using var tx = await c.BeginTransactionAsync(IsolationLevel.RepeatableRead);
-        var args = new (string, object?)[] { ("@admin", user.IsAdmin), ("@user", user.Id) };
+        var args = new (string, object?)[] { ("@admin", user.IsAdmin), ("@user", user.Id), ("@installers", installers) };
         var apps = await Read(c, tx, $"SELECT {AppFields} FROM apps a WHERE {Visible} ORDER BY a.name", App, args);
         var dependencies = await Read(c, tx, $"""
             SELECT d.app_id,d.dependency_id FROM app_dependencies d JOIN apps a ON a.id=d.app_id
             WHERE {Visible} ORDER BY d.dependency_id
             """, r => (Id: r.GetString(0), Dependency: r.GetString(1)), args);
-        var releaseFilter = administration ? "" : "AND r.published";
+        var releaseFilter = administration ? "" : $"AND r.published AND {SupportedInstaller}";
         var releases = await Read(c, tx, $"""
             SELECT {ReleaseFields} FROM releases r JOIN apps a ON a.id=r.app_id
             WHERE {Visible} {releaseFilter} ORDER BY r.major DESC,r.minor DESC,r.patch DESC
@@ -221,13 +227,13 @@ internal sealed class Store(IConfiguration config)
             dependencies.ToLookup(x => x.Id, x => x.Dependency), releases.ToLookup(x => x.Info.AppId));
     }
 
-    public async Task<ReleaseRow?> Download(UserProfile user, long id)
+    public async Task<ReleaseRow?> Download(UserProfile user, long id, bool installers = true)
     {
         await using var c = await Open();
         return (await Read(c, null, $"""
             SELECT {ReleaseFields} FROM releases r JOIN apps a ON a.id=r.app_id
-            WHERE r.id=@id AND r.published AND {Visible}
-            """, Release, ("@id", id), ("@admin", user.IsAdmin), ("@user", user.Id))).SingleOrDefault();
+            WHERE r.id=@id AND r.published AND {Visible} AND {SupportedInstaller}
+            """, Release, ("@id", id), ("@admin", user.IsAdmin), ("@user", user.Id), ("@installers", installers))).SingleOrDefault();
     }
 
     public async Task<UserProfile[]> Users()
@@ -338,7 +344,7 @@ internal sealed class Store(IConfiguration config)
         if (actor is { } user)
             await RequireAdmin(c, tx, user);
         else if (info.AppId != PackageRules.AppCenterId)
-            throw new RuleException("Автоматическая публикация допустима только для App Center.");
+            throw new RuleException("Автоматическая публикация допустима только для Центра приложений.");
         var version = Version.Parse(info.Version);
         try
         {
@@ -348,6 +354,9 @@ internal sealed class Store(IConfiguration config)
                 """, ("@app", info.AppId), ("@v", info.Version), ("@major", version.Major), ("@minor", version.Minor),
                 ("@patch", version.Build), ("@notes", info.Notes), ("@entry", info.EntryPoint), ("@size", info.Size),
                 ("@sha", info.Sha256), ("@key", key), ("@published", published));
+            if (info.Installer is not null)
+                await Execute(c, tx, "INSERT INTO release_installers VALUES (LAST_INSERT_ID(),@json)",
+                    ("@json", JsonSerializer.Serialize(info.Installer)));
         }
         catch (MySqlException ex) when (ex.Number == 1062)
         {

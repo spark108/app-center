@@ -47,7 +47,7 @@ internal static class ClientDownloads
             ? "<p>Загрузка пока недоступна.</p>"
             : $"""
                 <p>Windows x64 · версия {WebUtility.HtmlEncode(version)}</p>
-                <p><a class="download" href="{InstallerRoute}">Скачать App Center</a></p>
+                <p><a class="download" href="{InstallerRoute}">Скачать Центр приложений</a></p>
                 """;
         return Results.Content($"""
             <!doctype html>
@@ -55,10 +55,10 @@ internal static class ClientDownloads
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                <title>Spark108 App Center</title>
+                <title>Центр приложений</title>
                 <link rel="stylesheet" href="/download.css">
             </head>
-            <body><main><h1>Spark108 App Center</h1>{content}</main></body>
+            <body><main><h1>Центр приложений</h1>{content}</main></body>
             </html>
             """, "text/html; charset=utf-8");
     }

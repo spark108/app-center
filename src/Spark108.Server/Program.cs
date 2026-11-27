@@ -50,7 +50,7 @@ if (builder.Configuration.GetValue<bool>("show-client-version"))
         Console.WriteLine(release.Info.Version);
     else
     {
-        Console.Error.WriteLine("App Center has no published version.");
+        Console.Error.WriteLine("У Центра приложений ещё нет опубликованной версии.");
         Environment.ExitCode = 1;
     }
     return;
@@ -101,7 +101,7 @@ api.AddEndpointFilter(async (invocation, next) =>
     context.Items[typeof(UserProfile)] = user;
     return await next(invocation);
 });
-api.MapGet("", () => Results.Ok(new { service = "Spark108 App Center", version = 1 }));
+api.MapGet("", () => Results.Ok(new { service = "Центр приложений", version = 1 }));
 api.MapGet("/me", (HttpContext c) => Results.Ok(DesktopUser(c)));
 api.MapPost("/auth/logout", async (HttpContext c, Store db) =>
 {
@@ -111,17 +111,17 @@ api.MapPost("/auth/logout", async (HttpContext c, Store db) =>
 });
 api.MapGet("/catalog", async (HttpContext c, Store db) =>
 {
-    var catalog = await db.Catalog(DesktopUser(c));
+    var catalog = await db.Catalog(DesktopUser(c), installers: FileUpdates.SupportsInstallers(c));
     return Results.Ok(catalog.Apps.Keys.Select(catalog.Item));
 });
 api.MapGet("/apps/{id}/releases", async (string id, HttpContext c, Store db) =>
 {
-    var catalog = await db.Catalog(DesktopUser(c));
+    var catalog = await db.Catalog(DesktopUser(c), installers: FileUpdates.SupportsInstallers(c));
     return catalog.Apps.ContainsKey(id) ? Results.Ok(catalog.Releases[id].Select(r => r.Info)) : Results.NotFound();
 });
 api.MapGet("/apps/{id}/plan", async (string id, long? release, HttpContext c, Store db) =>
 {
-    var catalog = await db.Catalog(DesktopUser(c));
+    var catalog = await db.Catalog(DesktopUser(c), installers: FileUpdates.SupportsInstallers(c));
     if (!catalog.Apps.ContainsKey(id))
         return Results.NotFound();
     var target = release is null ? catalog.Releases[id].FirstOrDefault() :
@@ -156,13 +156,14 @@ api.MapGet("/apps/{id}/plan", async (string id, long? release, HttpContext c, St
 });
 api.MapGet("/releases/{id:long}/download", async (long id, HttpContext c, Store db, Storage files) =>
 {
-    var release = await db.Download(DesktopUser(c), id);
+    var release = await db.Download(DesktopUser(c), id, FileUpdates.SupportsInstallers(c));
     if (release is null)
         return Results.NotFound();
     var path = files.Package(release.StorageKey);
     return File.Exists(path) ? Results.File(path, "application/zip",
         $"{release.Info.AppId}-{release.Info.Version}.zip", enableRangeProcessing: true) : Results.NotFound();
 });
+FileUpdates.Map(api);
 AdminRoutes.Map(app);
 app.MapFallback(() => AdminView.Message(404, "404", "Страница не найдена."));
 await app.RunAsync();

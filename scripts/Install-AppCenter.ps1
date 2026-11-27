@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [string]$Package,
     [string]$Origin = 'https://app.godish.ru',
@@ -23,7 +23,7 @@ if ($env:SPARK108_APP_CENTER_HOME) {
 }
 $clientPath = Join-Path $installPath 'client'
 if ((Test-Path -LiteralPath $clientPath) -or (Test-Path -LiteralPath (Join-Path $installPath 'client.previous'))) {
-    throw 'App Center is already installed. Use the catalog to update it.'
+    throw 'Центр приложений уже установлен. Обновите его через каталог.'
 }
 $stagePath = Join-Path $installPath ('.install-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stagePath -Force | Out-Null
@@ -31,7 +31,7 @@ try {
     Expand-Archive -LiteralPath $packagePath -DestinationPath $stagePath
     foreach ($name in 'Spark108.Desktop.exe', 'Spark108.Updater.exe', 'spark-release.txt') {
         if (!(Test-Path -LiteralPath (Join-Path $stagePath $name) -PathType Leaf)) {
-            throw 'Use the App Center ZIP produced by Build-Release.ps1.'
+            throw 'Используйте ZIP Центра приложений, созданный скриптом Build-Release.ps1.'
         }
     }
     $options = @{ origin = $originUri.AbsoluteUri } | ConvertTo-Json -Compress
@@ -40,7 +40,7 @@ try {
     $exePath = Join-Path $clientPath 'Spark108.Desktop.exe'
     if (!$env:SPARK108_APP_CENTER_HOME) {
         $programs = [Environment]::GetFolderPath('Programs')
-        $linkPath = Join-Path $programs 'Spark108 App Center.lnk'
+        $linkPath = Join-Path $programs 'Центр приложений.lnk'
         $shell = New-Object -ComObject WScript.Shell
         $link = $shell.CreateShortcut($linkPath)
         $link.TargetPath = $exePath

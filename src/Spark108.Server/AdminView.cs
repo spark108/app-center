@@ -11,13 +11,13 @@ internal static class AdminView
     private static string Checked(bool value) => value ? " checked" : "";
     private static string Kind(PackageKind kind) => kind switch
     {
-        PackageKind.Component => "Компонент", PackageKind.AppCenter => "App Center", _ => "Программа"
+        PackageKind.Component => "Компонент", PackageKind.AppCenter => "Системный клиент", _ => "Программа"
     };
 
     private static IResult Page(string title, string content, HttpContext? context = null, int status = 200)
     {
         var navigation = context is null ? "" : $"""
-            <header><a class="brand" href="/acp"><b>✦</b> Spark108 <span>App Center</span></a>
+            <header><a class="brand" href="/acp"><b>✦</b> <span>Центр приложений</span></a>
               <nav><a href="/acp">Приложения</a><a href="/acp/users">Пользователи</a>
               <form method="post" action="/acp/logout">{Csrf(context)}<button class="quiet">Выйти</button></form></nav></header>
             """;
@@ -43,7 +43,7 @@ internal static class AdminView
         Page(title, $"""<section class="message"><h1>{H(title)}</h1><p>{H(description)}</p>{(status == 404 ? "" : """<a class="button" href="/acp">Открыть панель</a>""")}</section>""", status: status);
 
     public static IResult Login() => Page("Вход", """
-        <section class="message"><div class="eyebrow">✦ Spark108 App Center</div><h1>Панель управления</h1>
+        <section class="message"><div class="eyebrow">✦ Центр приложений</div><h1>Панель управления</h1>
         <p>Войдите с учётной записью Alathea Auth.</p><a class="button primary" href="/acp/login">Войти через Alathea</a></section>
         """);
 
@@ -100,12 +100,26 @@ internal static class AdminView
     private static string Releases(AppRow app, string path, string csrf, IEnumerable<ReleaseRow> releases)
     {
         var entry = app.Kind == PackageKind.Application
-            ? """<label>Файл запуска внутри ZIP<input required name="entry" maxlength="240" placeholder="bin/Tool.exe"></label>""" : "";
+            ? """<label>Файл запуска<input name="entry" maxlength="400" placeholder="bin/Tool.exe или {installDir}/Tool.exe"></label>""" : "";
+        var installer = app.Kind == PackageKind.AppCenter ? "" : """
+            <details><summary>Собственный установщик</summary>
+            <div class="fields">
+              <label>Установщик внутри ZIP<input name="installer" maxlength="240" placeholder="setup/setup.exe, setup.msi или install.ps1"></label>
+              <label>Аргументы установки, по одному на строку<textarea name="install_args" rows="3" maxlength="8000"></textarea></label>
+              <label class="check"><input type="checkbox" name="install_elevated">Запрашивать права администратора при установке</label>
+              <label>Файл удаления<input name="uninstaller" maxlength="400" placeholder="uninstall.ps1 или {installDir}/uninstall.exe"></label>
+              <label>Аргументы удаления, по одному на строку<textarea name="uninstall_args" rows="3" maxlength="8000"></textarea></label>
+              <label class="check"><input type="checkbox" name="uninstall_elevated">Запрашивать права администратора при удалении</label>
+              <label>Имя ключа удаления Windows<input name="registry_key" maxlength="160" placeholder="{GUID}"></label>
+              <small>{installDir} — папка программы, управляемая Центром приложений. {packageDir} — папка пакета.</small>
+            </div></details>
+            """;
         var rows = string.Concat(releases.Select(row => $"""
             <form class="panel release" method="post" action="{path}/releases/{row.Info.Id}">{csrf}
               <div><h3>{H(row.Info.Version)}</h3><small>{row.Info.Size / (1024d * 1024):0.0} МБ · {(row.Published ? "Опубликована" : "Черновик")}</small>
               <a class="back" href="{path}/releases/{row.Info.Id}/package">Скачать ZIP</a></div>
-              <label>Что нового<textarea name="notes" rows="2" maxlength="8000">{H(row.Info.Notes)}</textarea></label>
+              <label>Что нового<textarea name="notes" rows="2" maxlength="8000">{H(row.Info.Notes)}</textarea>
+              {(row.Info.Installer is null ? "" : $"<small>Установщик · {H(row.Info.Installer.Install.Path)}</small>")}</label>
               <label class="check"><input type="checkbox" name="published"{Checked(row.Published)}>Опубликована</label>
               <button>Сохранить</button>
             </form>
@@ -116,7 +130,7 @@ internal static class AdminView
               <h3>Загрузить версию</h3><div class="split">
               <label>Версия<input required name="version" placeholder="1.2.3" maxlength="32"></label>
               <label>ZIP-пакет<input required type="file" name="package" accept=".zip,application/zip"></label></div>
-              {entry}<label>Что нового<textarea name="notes" rows="3" maxlength="8000"></textarea></label>
+              {entry}{installer}<label>Что нового<textarea name="notes" rows="3" maxlength="8000"></textarea></label>
               <label class="check"><input type="checkbox" name="published">Опубликовать сразу</label>
               <div><button class="primary">Загрузить</button></div>
             </form>{rows}
